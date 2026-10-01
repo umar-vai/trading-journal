@@ -1,0 +1,18 @@
+{
+  "name": "Trading Journal — Edge Tracker",
+  "short_name": "Trade Journal",
+  "description": "Strategy-first trading journal, discipline tracker and performance analytics workspace.",
+  "start_url": "/trading-journal/",
+  "scope": "/trading-journal/",
+  "display": "standalone",
+  "background_color": "#080b10",
+  "theme_color": "#080b10",
+  "icons": [
+    {
+      "src": "/trading-journal/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
