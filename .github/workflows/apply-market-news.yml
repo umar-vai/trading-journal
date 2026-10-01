@@ -1,0 +1,47 @@
+name: Apply market news feature
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/apply-market-news.mjs'
+      - '.github/workflows/apply-market-news.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Apply news patch
+        run: node scripts/apply-market-news.mjs
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify production build
+        run: npm run build
+
+      - name: Commit generated changes
+        run: |
+          if git diff --quiet -- src/App.tsx src/styles.css; then
+            echo "No market news changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/styles.css
+          git commit -m "feat: add live trading news workspace"
+          git push origin HEAD:main
