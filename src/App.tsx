@@ -11,6 +11,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Newspaper,
+  ExternalLink,
   Plus,
   RefreshCw,
   Save,
@@ -34,7 +36,7 @@ import { supabase } from './lib/supabase'
 import { AdvancedAnalytics, DEFAULT_MISTAKES, ReportsPage, TradeEvidencePanel, exportJournalXlsx } from './AdvancedFeatures'
 import { cacheJournalSnapshot, clearJournalSnapshot, loadJournalSnapshot } from './lib/offlineCache'
 
-type View = 'dashboard' | 'strategies' | 'new-trade' | 'journal' | 'analytics' | 'reports'
+type View = 'dashboard' | 'strategies' | 'new-trade' | 'journal' | 'news' | 'analytics' | 'reports'
 type RuleStatus = 'followed' | 'violated' | 'na'
 
 type Strategy = {
@@ -359,6 +361,7 @@ function TradingJournal({ user }: { user: any }) {
     { id: 'strategies', label: 'Strategies', icon: Target },
     { id: 'new-trade', label: 'New Trade', icon: Plus },
     { id: 'journal', label: 'Journal', icon: BookOpen },
+    { id: 'news', label: 'News', icon: Newspaper },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'reports', label: 'Reports', icon: CalendarDays },
   ]
@@ -417,6 +420,7 @@ function TradingJournal({ user }: { user: any }) {
               {view === 'dashboard' && <Dashboard trades={trades} strategies={strategies} checks={checks} strategyMap={strategyMap} userId={user.id} onNewTrade={() => navigate('new-trade')} />}
               {view === 'strategies' && <StrategiesPage user={user} strategies={strategies} rulesByStrategy={rulesByStrategy} onChanged={loadData} />}
               {view === 'new-trade' && <NewTradePage user={user} strategies={strategies} rulesByStrategy={rulesByStrategy} onSaved={() => { loadData(); navigate('journal') }} />}
+              {view === 'news' && <NewsPage strategies={strategies} />}
               {view === 'journal' && <JournalPage user={user} trades={trades} strategies={strategies} checks={checks} mistakes={mistakes} images={images} strategyMap={strategyMap} checksByTrade={checksByTrade} mistakesByTrade={mistakesByTrade} imagesByTrade={imagesByTrade} onChanged={loadData} onExport={() => exportTradesCSV(trades, strategyMap, checksByTrade)} onExportXlsx={() => exportJournalXlsx({ trades, strategies, checks, mistakes, images })} />}
               {view === 'analytics' && <AnalyticsPage trades={trades} strategies={strategies} checks={checks} strategyMap={strategyMap} onJson={() => exportBackup(strategies, rules, trades, checks, mistakes, images)} />}
               {view === 'reports' && <ReportsPage trades={trades} strategies={strategies} checks={checks} mistakes={mistakes} images={images} />}
@@ -446,6 +450,151 @@ function TradingJournal({ user }: { user: any }) {
           <span>More</span>
         </button>
       </nav>
+    </div>
+  )
+}
+
+function NewsPage({ strategies }: { strategies: Strategy[] }) {
+  const [category, setCategory] = useState('all')
+  const [symbol, setSymbol] = useState('')
+  const [articles, setArticles] = useState<any[]>([])
+  const [loadingNews, setLoadingNews] = useState(true)
+  const [refreshingNews, setRefreshingNews] = useState(false)
+  const [error, setError] = useState('')
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null)
+  const [cacheMinutes, setCacheMinutes] = useState<number | null>(null)
+  const [cached, setCached] = useState(false)
+
+  const strategySymbols = useMemo(() => {
+    const values = strategies.flatMap((strategy) => Array.isArray(strategy.markets) ? strategy.markets : [])
+      .map((value) => String(value || '').trim().toUpperCase())
+      .filter(Boolean)
+    return [...new Set([...values, ...popularPairs])]
+  }, [strategies])
+
+  const loadNews = useCallback(async (silent = false) => {
+    if (!silent) setRefreshingNews(true)
+    setError('')
+    const { data, error: invokeError } = await supabase.functions.invoke('market-news', {
+      body: { category, symbol },
+    })
+    if (invokeError) {
+      setError('Live news is not available yet. The news provider may still need to be configured.')
+    } else if (data?.error) {
+      setError(data.error)
+    } else {
+      setArticles(Array.isArray(data?.articles) ? data.articles : [])
+      setFetchedAt(data?.fetchedAt || null)
+      setCacheMinutes(Number(data?.cacheMinutes) || null)
+      setCached(Boolean(data?.cached))
+    }
+    setLoadingNews(false)
+    setRefreshingNews(false)
+  }, [category, symbol])
+
+  useEffect(() => { loadNews() }, [loadNews])
+  useEffect(() => {
+    const timer = window.setInterval(() => loadNews(true), 60_000)
+    return () => window.clearInterval(timer)
+  }, [loadNews])
+
+  function sentimentMeta(value: any) {
+    const score = Number(value)
+    if (!Number.isFinite(score)) return { label: 'Unrated', tone: 'neutral' }
+    if (score >= 0.12) return { label: 'Positive', tone: 'positive' }
+    if (score <= -0.12) return { label: 'Negative', tone: 'negative' }
+    return { label: 'Neutral', tone: 'neutral' }
+  }
+
+  function relativeTime(value: string) {
+    const time = new Date(value).getTime()
+    if (!Number.isFinite(time)) return ''
+    const seconds = Math.round((time - Date.now()) / 1000)
+    const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+    if (Math.abs(seconds) < 60) return formatter.format(seconds, 'second')
+    const minutes = Math.round(seconds / 60)
+    if (Math.abs(minutes) < 60) return formatter.format(minutes, 'minute')
+    const hours = Math.round(minutes / 60)
+    if (Math.abs(hours) < 24) return formatter.format(hours, 'hour')
+    return formatter.format(Math.round(hours / 24), 'day')
+  }
+
+  return (
+    <div className="page-stack news-page">
+      <div className="page-heading news-heading">
+        <div>
+          <span className="eyebrow">LIVE MARKET CONTEXT</span>
+          <h1>Trading news</h1>
+          <p>Follow macro, forex, metals, indices and crypto headlines without leaving your journal.</p>
+        </div>
+        <button className="secondary-button" onClick={() => loadNews()} disabled={refreshingNews}>
+          <RefreshCw className={refreshingNews ? 'spin' : ''} size={16} /> Refresh
+        </button>
+      </div>
+
+      <section className="panel news-filter-panel">
+        <div className="news-filter-grid">
+          <label>Market focus
+            <select value={category} onChange={(event) => setCategory(event.target.value)}>
+              <option value="all">All trading news</option>
+              <option value="macro">Macro & central banks</option>
+              <option value="forex">Forex</option>
+              <option value="metals">Gold & metals</option>
+              <option value="indices">Indices & equities</option>
+              <option value="crypto">Crypto</option>
+            </select>
+          </label>
+          <label>Instrument
+            <select value={symbol} onChange={(event) => setSymbol(event.target.value)}>
+              <option value="">All instruments</option>
+              {strategySymbols.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="news-feed-status">
+          <span className="live-dot" />
+          <span>{fetchedAt ? `Feed checked ${relativeTime(fetchedAt)}` : 'Connecting to market feed'}</span>
+          {cacheMinutes && <span>· server refresh window {cacheMinutes} min</span>}
+          {cached && <span>· cached</span>}
+        </div>
+      </section>
+
+      {error && (
+        <div className="panel news-setup-state">
+          <Newspaper size={28} />
+          <div><h3>News feed needs one final connection</h3><p>{error}</p></div>
+        </div>
+      )}
+
+      {loadingNews && !error ? <SectionLoader /> : !error && articles.length === 0 ? (
+        <div className="panel"><EmptyState text="No matching headlines were returned for this filter yet." /></div>
+      ) : !error && (
+        <div className="news-grid">
+          {articles.map((article) => {
+            const sentiment = sentimentMeta(article.sentiment)
+            return (
+              <article className="news-card" key={article.id || article.url}>
+                {article.imageUrl ? <img src={article.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <div className="news-image-placeholder"><Newspaper size={24} /></div>}
+                <div className="news-card-body">
+                  <div className="news-meta-row">
+                    <span className="news-source">{article.source || 'Market source'}</span>
+                    <span className={`news-sentiment ${sentiment.tone}`}>{sentiment.label}</span>
+                  </div>
+                  <h3>{article.title}</h3>
+                  <p>{article.description || 'Open the source to read the full market update.'}</p>
+                  {Array.isArray(article.entities) && article.entities.length > 0 && <div className="news-entity-row">{article.entities.slice(0, 5).map((entity: any) => <span key={entity.symbol || entity.name}>{entity.symbol || entity.name}</span>)}</div>}
+                  <div className="news-card-footer">
+                    <span>{relativeTime(article.publishedAt)}</span>
+                    <a href={article.url} target="_blank" rel="noreferrer">Read source <ExternalLink size={13} /></a>
+                  </div>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      )}
+
+      <p className="news-disclaimer">News and sentiment are informational context only, not trading signals or financial advice.</p>
     </div>
   )
 }
