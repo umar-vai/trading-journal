@@ -242,8 +242,8 @@ function Breakdown({ title, rows }: { title: string; rows: any[] }) {
 }
 
 export function ReportsPage({ trades, strategies, checks, mistakes, images }: any) {
-  const months = useMemo(() => {
-    const values = [...new Set((trades || []).map((trade: any) => String(trade.trade_date || '').slice(0, 7)).filter(Boolean))]
+  const months = useMemo<string[]>(() => {
+    const values = Array.from(new Set<string>((trades || []).map((trade: any) => String(trade.trade_date || '').slice(0, 7)).filter(Boolean)))
     const current = new Date().toISOString().slice(0, 7)
     if (!values.includes(current)) values.push(current)
     return values.sort().reverse()
