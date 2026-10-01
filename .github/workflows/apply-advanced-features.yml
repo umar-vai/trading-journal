@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/apply-advanced-features.mjs'
+      - '.github/workflows/apply-advanced-features.yml'
   workflow_dispatch:
 
 permissions:
