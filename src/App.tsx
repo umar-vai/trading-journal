@@ -166,7 +166,10 @@ function AuthScreen() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { display_name: displayName || email.split('@')[0] } },
+        options: {
+          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
+          data: { display_name: displayName || email.split('@')[0] },
+        },
       })
       if (error) setError(error.message)
       else if (!data.session) setMessage('Account created. Check your email to confirm the account, then sign in.')
