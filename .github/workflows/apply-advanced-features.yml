@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/apply-advanced-features.mjs'
+      - 'scripts/fix-advanced-types.mjs'
       - '.github/workflows/apply-advanced-features.yml'
   workflow_dispatch:
 
@@ -23,14 +24,17 @@ jobs:
       - name: Apply advanced feature patch
         run: node scripts/apply-advanced-features.mjs
 
+      - name: Fix advanced feature types
+        run: node scripts/fix-advanced-types.mjs
+
       - name: Commit generated changes
         run: |
-          if git diff --quiet -- src/App.tsx src/styles.css; then
+          if git diff --quiet -- src/App.tsx src/styles.css src/AdvancedFeatures.tsx; then
             echo "No advanced feature changes required."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/App.tsx src/styles.css
-          git commit -m "feat: add evidence mistakes reports analytics xlsx and offline cache"
+          git add src/App.tsx src/styles.css src/AdvancedFeatures.tsx
+          git commit -m "fix: finalize advanced trading journal feature integration"
           git push origin HEAD:main
