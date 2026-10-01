@@ -3,6 +3,7 @@ import {
   Activity,
   BarChart3,
   BookOpen,
+  CalendarDays,
   Check,
   ChevronRight,
   Download,
@@ -17,6 +18,7 @@ import {
   Target,
   TrendingDown,
   TrendingUp,
+  WifiOff,
   X,
 } from 'lucide-react'
 import {
@@ -29,8 +31,10 @@ import {
   YAxis,
 } from 'recharts'
 import { supabase } from './lib/supabase'
+import { AdvancedAnalytics, DEFAULT_MISTAKES, ReportsPage, TradeEvidencePanel, exportJournalXlsx } from './AdvancedFeatures'
+import { cacheJournalSnapshot, clearJournalSnapshot, loadJournalSnapshot } from './lib/offlineCache'
 
-type View = 'dashboard' | 'strategies' | 'new-trade' | 'journal' | 'analytics'
+type View = 'dashboard' | 'strategies' | 'new-trade' | 'journal' | 'analytics' | 'reports'
 type RuleStatus = 'followed' | 'violated' | 'na'
 
 type Strategy = {
@@ -261,26 +265,65 @@ function TradingJournal({ user }: { user: any }) {
   const [rules, setRules] = useState<Rule[]>([])
   const [trades, setTrades] = useState<Trade[]>([])
   const [checks, setChecks] = useState<RuleCheck[]>([])
+  const [mistakes, setMistakes] = useState<any[]>([])
+  const [images, setImages] = useState<any[]>([])
+  const [offline, setOffline] = useState(!navigator.onLine)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   const loadData = useCallback(async () => {
     setRefreshing(true)
-    const [strategyResult, ruleResult, tradeResult, checkResult] = await Promise.all([
-      supabase.from('strategies').select('*').order('created_at', { ascending: false }),
-      supabase.from('strategy_rules').select('*').order('sort_order'),
-      supabase.from('trades').select('*').order('trade_date', { ascending: false }).order('created_at', { ascending: false }),
-      supabase.from('trade_rule_checks').select('*').order('rule_sort_order'),
-    ])
-    setStrategies((strategyResult.data || []) as Strategy[])
-    setRules((ruleResult.data || []) as Rule[])
-    setTrades((tradeResult.data || []) as Trade[])
-    setChecks((checkResult.data || []) as RuleCheck[])
-    setLoading(false)
-    setRefreshing(false)
-  }, [])
+    try {
+      const [strategyResult, ruleResult, tradeResult, checkResult, mistakeResult, imageResult] = await Promise.all([
+        supabase.from('strategies').select('*').order('created_at', { ascending: false }),
+        supabase.from('strategy_rules').select('*').order('sort_order'),
+        supabase.from('trades').select('*').order('trade_date', { ascending: false }).order('created_at', { ascending: false }),
+        supabase.from('trade_rule_checks').select('*').order('rule_sort_order'),
+        supabase.from('trade_mistakes').select('*').order('created_at'),
+        supabase.from('trade_images').select('*').order('created_at'),
+      ])
+      if (strategyResult.error || ruleResult.error || tradeResult.error || checkResult.error) {
+        throw strategyResult.error || ruleResult.error || tradeResult.error || checkResult.error
+      }
+      const nextStrategies = (strategyResult.data || []) as Strategy[]
+      const nextRules = (ruleResult.data || []) as Rule[]
+      const nextTrades = (tradeResult.data || []) as Trade[]
+      const nextChecks = (checkResult.data || []) as RuleCheck[]
+      const nextMistakes = mistakeResult.data || []
+      const nextImages = imageResult.data || []
+      setStrategies(nextStrategies)
+      setRules(nextRules)
+      setTrades(nextTrades)
+      setChecks(nextChecks)
+      setMistakes(nextMistakes)
+      setImages(nextImages)
+      setOffline(false)
+      await cacheJournalSnapshot(user.id, { strategies: nextStrategies, rules: nextRules, trades: nextTrades, checks: nextChecks, mistakes: nextMistakes, images: nextImages })
+    } catch (error) {
+      const cached = await loadJournalSnapshot(user.id).catch(() => null)
+      if (cached) {
+        setStrategies(cached.strategies as Strategy[])
+        setRules(cached.rules as Rule[])
+        setTrades(cached.trades as Trade[])
+        setChecks(cached.checks as RuleCheck[])
+        setMistakes(cached.mistakes as any[])
+        setImages(cached.images as any[])
+        setOffline(true)
+      }
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [user.id])
 
   useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    const onOnline = () => { setOffline(false); loadData() }
+    const onOffline = () => setOffline(true)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline) }
+  }, [loadData])
 
   const strategyMap = useMemo(() => Object.fromEntries(strategies.map((s) => [s.id, s])), [strategies])
   const rulesByStrategy = useMemo(() => {
@@ -299,6 +342,16 @@ function TradingJournal({ user }: { user: any }) {
     })
     return map
   }, [checks])
+  const mistakesByTrade = useMemo(() => {
+    const map: Record<string, any[]> = {}
+    mistakes.forEach((item) => { if (!map[item.trade_id]) map[item.trade_id] = []; map[item.trade_id].push(item) })
+    return map
+  }, [mistakes])
+  const imagesByTrade = useMemo(() => {
+    const map: Record<string, any[]> = {}
+    images.forEach((item) => { if (!map[item.trade_id]) map[item.trade_id] = []; map[item.trade_id].push(item) })
+    return map
+  }, [images])
 
   const navItems: { id: View; label: string; icon: any }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -306,6 +359,7 @@ function TradingJournal({ user }: { user: any }) {
     { id: 'new-trade', label: 'New Trade', icon: Plus },
     { id: 'journal', label: 'Journal', icon: BookOpen },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'reports', label: 'Reports', icon: CalendarDays },
   ]
 
   function navigate(next: View) {
@@ -336,7 +390,7 @@ function TradingJournal({ user }: { user: any }) {
             <div className="avatar">{(user.email || 'U')[0].toUpperCase()}</div>
             <div><strong>{user.user_metadata?.display_name || user.email?.split('@')[0]}</strong><span>{user.email}</span></div>
           </div>
-          <button className="logout-button" onClick={() => supabase.auth.signOut()}><LogOut size={17} />Sign out</button>
+          <button className="logout-button" onClick={async () => { await clearJournalSnapshot(user.id).catch(() => undefined); await supabase.auth.signOut({ scope: 'local' }) }}><LogOut size={17} />Sign out</button>
         </div>
       </aside>
       {mobileMenu && <div className="mobile-overlay" onClick={() => setMobileMenu(false)} />}
@@ -349,6 +403,7 @@ function TradingJournal({ user }: { user: any }) {
             <h2>{navItems.find((item) => item.id === view)?.label}</h2>
           </div>
           <div className="topbar-actions">
+            {offline && <span className="offline-badge"><WifiOff size={14} /> Offline cache</span>}
             <button className="icon-button" onClick={loadData} title="Refresh data"><RefreshCw className={refreshing ? 'spin' : ''} size={17} /></button>
             <button className="primary-button compact" onClick={() => navigate('new-trade')}><Plus size={17} /> Log trade</button>
           </div>
@@ -360,8 +415,9 @@ function TradingJournal({ user }: { user: any }) {
               {view === 'dashboard' && <Dashboard trades={trades} strategies={strategies} checks={checks} strategyMap={strategyMap} userId={user.id} onNewTrade={() => navigate('new-trade')} />}
               {view === 'strategies' && <StrategiesPage user={user} strategies={strategies} rulesByStrategy={rulesByStrategy} onChanged={loadData} />}
               {view === 'new-trade' && <NewTradePage user={user} strategies={strategies} rulesByStrategy={rulesByStrategy} onSaved={() => { loadData(); navigate('journal') }} />}
-              {view === 'journal' && <JournalPage trades={trades} strategyMap={strategyMap} checksByTrade={checksByTrade} onExport={() => exportTradesCSV(trades, strategyMap, checksByTrade)} />}
-              {view === 'analytics' && <AnalyticsPage trades={trades} strategies={strategies} checks={checks} strategyMap={strategyMap} onJson={() => exportBackup(strategies, rules, trades, checks)} />}
+              {view === 'journal' && <JournalPage user={user} trades={trades} strategies={strategies} checks={checks} mistakes={mistakes} images={images} strategyMap={strategyMap} checksByTrade={checksByTrade} mistakesByTrade={mistakesByTrade} imagesByTrade={imagesByTrade} onChanged={loadData} onExport={() => exportTradesCSV(trades, strategyMap, checksByTrade)} onExportXlsx={() => exportJournalXlsx({ trades, strategies, checks, mistakes, images })} />}
+              {view === 'analytics' && <AnalyticsPage trades={trades} strategies={strategies} checks={checks} strategyMap={strategyMap} onJson={() => exportBackup(strategies, rules, trades, checks, mistakes, images)} />}
+              {view === 'reports' && <ReportsPage trades={trades} strategies={strategies} checks={checks} mistakes={mistakes} images={images} />}
             </>
           )}
         </div>
@@ -666,6 +722,8 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
     strategy_id: activeStrategies[0]?.id || '', symbol: 'XAUUSD', direction: 'long', trade_date: new Date().toISOString().slice(0, 10), entry_time: new Date().toTimeString().slice(0, 5), exit_time: '', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Dhaka', session: 'London', timeframe: '5M', higher_timeframe: '1H', entry_price: '', stop_loss: '', take_profit: '', exit_price: '', risk_percent: '1', actual_r: '', pnl: '', result: 'win', grade: 'A', emotion: 'Calm', confidence: '4', description: '', thesis: '', post_trade_review: '',
   })
   const [ruleStates, setRuleStates] = useState<Record<string, RuleStatus>>({})
+  const [selectedMistakes, setSelectedMistakes] = useState<string[]>([])
+  const [customMistake, setCustomMistake] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -689,6 +747,10 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
     const violated = values.filter((v) => v === 'violated').length
     return followed + violated === 0 ? 0 : (followed / (followed + violated)) * 100
   }, [ruleStates])
+
+  function toggleMistake(mistake: string) {
+    setSelectedMistakes((current) => current.includes(mistake) ? current.filter((item) => item !== mistake) : [...current, mistake])
+  }
 
   async function save(e: FormEvent) {
     e.preventDefault()
@@ -739,7 +801,12 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
         status: ruleStates[rule.id] || 'na',
       }))
       const { error: checkError } = await supabase.from('trade_rule_checks').insert(checkRows)
-      if (checkError) { setError(checkError.message); setBusy(false); return }
+      if (checkError) { await supabase.from('trades').delete().eq('id', trade.id); setError(checkError.message); setBusy(false); return }
+    }
+    if (selectedMistakes.length) {
+      const mistakeRows = selectedMistakes.map((mistake) => ({ trade_id: trade.id, user_id: user.id, mistake }))
+      const { error: mistakeError } = await supabase.from('trade_mistakes').insert(mistakeRows)
+      if (mistakeError) { await supabase.from('trades').delete().eq('id', trade.id); setError(mistakeError.message); setBusy(false); return }
     }
     setBusy(false)
     onSaved()
@@ -803,6 +870,15 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
       </section>
 
       <section className="panel">
+        <PanelHeader title="Mistake tracker" subtitle="Tag execution errors separately from strategy-rule compliance" />
+        <div className="mistake-picker">
+          {DEFAULT_MISTAKES.map((mistake) => <button type="button" key={mistake} className={selectedMistakes.includes(mistake) ? 'selected' : ''} onClick={() => toggleMistake(mistake)}>{mistake}</button>)}
+        </div>
+        <div className="custom-mistake-row trade-form-custom-mistake"><input value={customMistake} onChange={(e) => setCustomMistake(e.target.value)} placeholder="Add a custom mistake" /><button type="button" className="secondary-button" disabled={!customMistake.trim()} onClick={() => { const value = customMistake.trim(); if (value && !selectedMistakes.includes(value)) setSelectedMistakes([...selectedMistakes, value]); setCustomMistake('') }}><Plus size={15} /> Add</button></div>
+        {selectedMistakes.length > 0 && <p className="selected-mistake-summary">Selected: {selectedMistakes.join(' · ')}</p>}
+      </section>
+
+      <section className="panel">
         <PanelHeader title="Journal notes" subtitle="Record what you saw before the result can influence your memory" />
         <div className="form-grid two">
           <label>What did you see?<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="HTF structure, liquidity, context, confluences…" /></label>
@@ -817,7 +893,7 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
   )
 }
 
-function JournalPage({ trades, strategyMap, checksByTrade, onExport }: any) {
+function JournalPage({ user, trades, strategies, checks, mistakes, images, strategyMap, checksByTrade, mistakesByTrade, imagesByTrade, onChanged, onExport, onExportXlsx }: any) {
   const [query, setQuery] = useState('')
   const [strategyFilter, setStrategyFilter] = useState('all')
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -829,7 +905,7 @@ function JournalPage({ trades, strategyMap, checksByTrade, onExport }: any) {
 
   return (
     <div className="page-stack">
-      <div className="page-heading"><div><span className="eyebrow">EXECUTION HISTORY</span><h1>Trade journal</h1><p>Search, filter and review the evidence behind every result.</p></div><button className="secondary-button" onClick={onExport}><Download size={17} /> Export CSV</button></div>
+      <div className="page-heading"><div><span className="eyebrow">EXECUTION HISTORY</span><h1>Trade journal</h1><p>Search, filter and review the evidence behind every result.</p></div><div className="journal-export-actions"><button className="secondary-button" onClick={onExport}><Download size={17} /> CSV</button><button className="secondary-button" onClick={onExportXlsx}><Download size={17} /> XLSX</button></div></div>
       <div className="panel journal-panel">
         <div className="filter-row"><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search symbol, strategy or notes…" /><select value={strategyFilter} onChange={(e) => setStrategyFilter(e.target.value)}><option value="all">All strategies</option>{strategyOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
         {filtered.length === 0 ? <EmptyState text="No trades match this view." /> : (
@@ -851,7 +927,7 @@ function JournalPage({ trades, strategyMap, checksByTrade, onExport }: any) {
                   <td><span className="adherence-mini">{adherence}%</span></td>
                   <td><ChevronRight className={expanded === trade.id ? 'rotate' : ''} size={17} /></td>
                 </tr>,
-                expanded === trade.id ? <tr className="trade-detail-row" key={`${trade.id}-detail`}><td colSpan={9}><TradeDetails trade={trade} checks={tradeChecks} /></td></tr> : null,
+                expanded === trade.id ? <tr className="trade-detail-row" key={`${trade.id}-detail`}><td colSpan={9}><TradeDetails trade={trade} checks={tradeChecks} /><TradeEvidencePanel trade={trade} images={imagesByTrade[trade.id] || []} mistakes={mistakesByTrade[trade.id] || []} userId={user.id} onChanged={onChanged} /></td></tr> : null,
               ]
             })}
           </tbody></table></div>
@@ -886,6 +962,7 @@ function AnalyticsPage({ trades, strategies, checks, strategyMap, onJson }: any)
         <div className="panel"><PanelHeader title="Strategy comparison" subtitle="Expectancy is more informative than win rate alone" />{stats.length ? <div className="analytics-table"><div className="analytics-head"><span>Strategy</span><span>Trades</span><span>WR</span><span>Exp.</span></div>{stats.map((row) => <div className="analytics-row" key={row.id}><div><strong>{row.name}</strong><small>{row.trades < 20 ? 'Low sample size' : row.trades < 50 ? 'Developing sample' : 'Stronger sample'}</small></div><span>{row.trades}</span><span>{row.winRate.toFixed(1)}%</span><strong className={row.expectancy >= 0 ? 'positive' : 'negative'}>{row.expectancy >= 0 ? '+' : ''}{row.expectancy.toFixed(2)}R</strong></div>)}</div> : <EmptyState text="Strategy statistics appear after you log trades." />}</div>
         <div className="panel"><PanelHeader title="Rules with the most evidence" subtitle="Correlation signal, not proof of causation" />{ruleStats.length ? <div className="rule-stats">{ruleStats.slice(0, 8).map((row, index) => <div className="rule-stat" key={`${row.rule}-${index}`}><div><strong>{row.rule}</strong><span>{row.total} evaluated trades</span></div><div><span className="good-text">Followed: {row.followedWinRate.toFixed(0)}% WR</span><span className="bad-text">Violated: {row.violatedWinRate.toFixed(0)}% WR</span></div></div>)}</div> : <EmptyState text="Rule-level analytics will appear after trades have checklist data." />}</div>
       </section>
+      <AdvancedAnalytics trades={trades} />
     </div>
   )
 }
@@ -967,6 +1044,6 @@ function exportTradesCSV(trades: Trade[], strategyMap: Record<string, Strategy>,
   downloadText(`trading-journal-${new Date().toISOString().slice(0,10)}.csv`, [headers.join(','), ...rows].join('\n'), 'text/csv;charset=utf-8')
 }
 
-function exportBackup(strategies: Strategy[], rules: Rule[], trades: Trade[], checks: RuleCheck[]) {
-  downloadText(`trading-journal-backup-${new Date().toISOString().slice(0,10)}.json`, JSON.stringify({ exported_at: new Date().toISOString(), strategies, rules, trades, rule_checks: checks }, null, 2), 'application/json')
+function exportBackup(strategies: Strategy[], rules: Rule[], trades: Trade[], checks: RuleCheck[], mistakes: any[], images: any[]) {
+  downloadText(`trading-journal-backup-${new Date().toISOString().slice(0,10)}.json`, JSON.stringify({ exported_at: new Date().toISOString(), strategies, rules, trades, rule_checks: checks, mistakes, images }, null, 2), 'application/json')
 }
