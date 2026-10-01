@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 
+// One-time patch for GitHub Pages auth confirmation redirects.
 const appPath = 'src/App.tsx'
 let app = fs.readFileSync(appPath, 'utf8')
 
