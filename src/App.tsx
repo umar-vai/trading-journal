@@ -297,8 +297,6 @@ function TradingJournal({ user }: { user: any }) {
     return map
   }, [checks])
 
-  const metrics = useMemo(() => calculateMetrics(trades, checks), [trades, checks])
-
   const navItems: { id: View; label: string; icon: any }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'strategies', label: 'Strategies', icon: Target },
@@ -356,7 +354,7 @@ function TradingJournal({ user }: { user: any }) {
         <div className="page-content">
           {loading ? <SectionLoader /> : (
             <>
-              {view === 'dashboard' && <Dashboard metrics={metrics} trades={trades} strategies={strategies} strategyMap={strategyMap} onNewTrade={() => navigate('new-trade')} />}
+              {view === 'dashboard' && <Dashboard trades={trades} strategies={strategies} checks={checks} strategyMap={strategyMap} userId={user.id} onNewTrade={() => navigate('new-trade')} />}
               {view === 'strategies' && <StrategiesPage user={user} strategies={strategies} rulesByStrategy={rulesByStrategy} onChanged={loadData} />}
               {view === 'new-trade' && <NewTradePage user={user} strategies={strategies} rulesByStrategy={rulesByStrategy} onSaved={() => { loadData(); navigate('journal') }} />}
               {view === 'journal' && <JournalPage trades={trades} strategyMap={strategyMap} checksByTrade={checksByTrade} onExport={() => exportTradesCSV(trades, strategyMap, checksByTrade)} />}
@@ -373,9 +371,40 @@ function SectionLoader() {
   return <div className="section-loader"><RefreshCw className="spin" size={20} /> Loading your journal…</div>
 }
 
-function Dashboard({ metrics, trades, strategies, strategyMap, onNewTrade }: any) {
-  const recent = trades.slice(0, 6)
-  const strategyStats = strategyPerformance(trades, strategies)
+function Dashboard({ trades, strategies, checks, strategyMap, userId, onNewTrade }: any) {
+  const storageKey = `trading-journal:dashboard-strategy:${userId}`
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string>(() => {
+    try { return window.localStorage.getItem(storageKey) || '' } catch { return '' }
+  })
+
+  useEffect(() => {
+    if (!strategies.length) return
+    const selectedStillExists = strategies.some((strategy: Strategy) => strategy.id === selectedStrategyId)
+    if (!selectedStillExists) {
+      const fallback = strategies.find((strategy: Strategy) => strategy.status === 'active')
+        || strategies.find((strategy: Strategy) => strategy.status === 'testing')
+        || strategies[0]
+      if (fallback) setSelectedStrategyId(fallback.id)
+    }
+  }, [strategies, selectedStrategyId])
+
+  useEffect(() => {
+    if (!selectedStrategyId) return
+    try { window.localStorage.setItem(storageKey, selectedStrategyId) } catch { /* local storage can be unavailable */ }
+  }, [selectedStrategyId, storageKey])
+
+  const selectedStrategy = strategies.find((strategy: Strategy) => strategy.id === selectedStrategyId)
+  const strategyTrades = selectedStrategyId
+    ? trades.filter((trade: Trade) => trade.strategy_id === selectedStrategyId)
+    : []
+  const strategyTradeIds = new Set(strategyTrades.map((trade: Trade) => trade.id))
+  const strategyChecks = checks.filter((check: RuleCheck) => strategyTradeIds.has(check.trade_id))
+  const metrics = calculateMetrics(strategyTrades, strategyChecks)
+  const decisiveTrades = metrics.wins + metrics.losses
+  const lossRate = decisiveTrades ? (metrics.losses / decisiveTrades) * 100 : 0
+  const winLossRatio = metrics.losses ? metrics.wins / metrics.losses : metrics.wins > 0 ? Infinity : 0
+  const recent = strategyTrades.slice(0, 6)
+  const strategyStats = selectedStrategy ? strategyPerformance(strategyTrades, [selectedStrategy]) : []
   return (
     <div className="page-stack">
       <section className="hero-card">
@@ -384,12 +413,23 @@ function Dashboard({ metrics, trades, strategies, strategyMap, onNewTrade }: any
           <h1>Trade the plan. Measure the execution.</h1>
           <p>Your journal separates outcome from process so a lucky win never looks like a good trade.</p>
         </div>
-        <button className="primary-button" onClick={onNewTrade}><Plus size={18} /> Log a new trade</button>
+        <div className="dashboard-hero-actions">
+          <label className="dashboard-strategy-select">
+            <span>Dashboard strategy</span>
+            <select value={selectedStrategyId} onChange={(e) => setSelectedStrategyId(e.target.value)} disabled={!strategies.length}>
+              {strategies.map((strategy: Strategy) => <option key={strategy.id} value={strategy.id}>{strategy.name}{strategy.status === 'archived' ? ' · Archived' : ''}</option>)}
+            </select>
+            <small>Stats below are scoped to this strategy. Your last selection is remembered.</small>
+          </label>
+          <button className="primary-button" onClick={onNewTrade}><Plus size={18} /> Log a new trade</button>
+        </div>
       </section>
 
-      <section className="metric-grid">
+      <section className="metric-grid dashboard-metrics">
         <MetricCard label="Total Trades" value={metrics.totalTrades} detail={`${metrics.closedTrades} closed`} icon={BookOpen} />
         <MetricCard label="Win Rate" value={`${metrics.winRate.toFixed(1)}%`} detail={`${metrics.wins} wins / ${metrics.losses} losses`} icon={Target} trend={metrics.winRate >= 50 ? 'up' : 'down'} />
+        <MetricCard label="Loss Rate" value={`${lossRate.toFixed(1)}%`} detail={decisiveTrades ? `${metrics.losses} of ${decisiveTrades} decisive trades` : 'No decisive trades yet'} icon={TrendingDown} trend={lossRate <= 50 ? 'up' : 'down'} />
+        <MetricCard label="W/L Ratio" value={Number.isFinite(winLossRatio) ? winLossRatio.toFixed(2) : '∞'} detail={`${metrics.wins} wins : ${metrics.losses} losses`} icon={Activity} trend={winLossRatio >= 1 ? 'up' : 'down'} />
         <MetricCard label="Net R" value={`${metrics.netR >= 0 ? '+' : ''}${metrics.netR.toFixed(2)}R`} detail={`${metrics.expectancy >= 0 ? '+' : ''}${metrics.expectancy.toFixed(2)}R expectancy`} icon={metrics.netR >= 0 ? TrendingUp : TrendingDown} trend={metrics.netR >= 0 ? 'up' : 'down'} />
         <MetricCard label="Profit Factor" value={Number.isFinite(metrics.profitFactor) ? metrics.profitFactor.toFixed(2) : '∞'} detail="Gross wins ÷ gross losses" icon={BarChart3} />
         <MetricCard label="Rule Adherence" value={`${metrics.adherence.toFixed(1)}%`} detail={`${metrics.violations} rule violations`} icon={ShieldCheck} trend={metrics.adherence >= 80 ? 'up' : undefined} />
@@ -397,8 +437,8 @@ function Dashboard({ metrics, trades, strategies, strategyMap, onNewTrade }: any
 
       <section className="two-column">
         <div className="panel">
-          <PanelHeader title="Recent trades" subtitle="Your latest executions" />
-          {recent.length === 0 ? <EmptyState text="No trades yet. Log your first trade to start the journal." /> : (
+          <PanelHeader title="Recent trades" subtitle={`${selectedStrategy?.name || 'Selected strategy'} · latest executions`} />
+          {recent.length === 0 ? <EmptyState text={selectedStrategy ? `No trades logged for ${selectedStrategy.name} yet.` : 'Create a strategy to start tracking strategy-specific performance.'} /> : (
             <div className="recent-list">
               {recent.map((trade: Trade) => (
                 <div className="recent-row" key={trade.id}>
@@ -413,8 +453,8 @@ function Dashboard({ metrics, trades, strategies, strategyMap, onNewTrade }: any
         </div>
 
         <div className="panel">
-          <PanelHeader title="Strategy leaderboard" subtitle="Ranked by expectancy" />
-          {strategyStats.length === 0 ? <EmptyState text="Create a strategy and start tagging trades to compare performance." /> : (
+          <PanelHeader title="Selected strategy" subtitle="Current strategy performance" />
+          {strategyStats.length === 0 ? <EmptyState text="The selected strategy does not have enough closed trades yet." /> : (
             <div className="leaderboard">
               {strategyStats.slice(0, 5).map((row, index) => (
                 <div className="leader-row" key={row.id}>
