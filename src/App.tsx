@@ -106,6 +106,7 @@ type RuleCheck = {
 const sessions = ['Asian', 'London', 'New York', 'London / New York Overlap', 'Other']
 const timeframes = ['1M', '3M', '5M', '15M', '30M', '1H', '4H', '1D', '1W']
 const emotions = ['Calm', 'Focused', 'FOMO', 'Fear', 'Greed', 'Revenge', 'Overconfident', 'Tired', 'Distracted']
+const popularPairs = ['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD', 'GBPJPY', 'EURJPY', 'EURGBP', 'AUDJPY', 'NAS100', 'US30', 'SPX500', 'GER40', 'BTCUSD', 'BTCUSDT', 'ETHUSD', 'ETHUSDT']
 
 function formatNumber(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '—'
@@ -361,6 +362,7 @@ function TradingJournal({ user }: { user: any }) {
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'reports', label: 'Reports', icon: CalendarDays },
   ]
+  const mobileBottomItems = navItems.filter((item) => ['dashboard', 'strategies', 'new-trade', 'journal'].includes(item.id))
 
   function navigate(next: View) {
     setView(next)
@@ -422,6 +424,28 @@ function TradingJournal({ user }: { user: any }) {
           )}
         </div>
       </main>
+
+      <nav className="mobile-bottom-nav" aria-label="Primary mobile navigation">
+        {mobileBottomItems.map((item) => {
+          const Icon = item.icon
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={`${view === item.id ? 'active' : ''} ${item.id === 'new-trade' ? 'mobile-bottom-action' : ''}`}
+              onClick={() => navigate(item.id)}
+              aria-current={view === item.id ? 'page' : undefined}
+            >
+              <span className="mobile-bottom-icon"><Icon size={item.id === 'new-trade' ? 22 : 19} /></span>
+              <span>{item.id === 'new-trade' ? 'New' : item.label}</span>
+            </button>
+          )
+        })}
+        <button type="button" className={mobileMenu ? 'active' : ''} onClick={() => setMobileMenu(true)}>
+          <span className="mobile-bottom-icon"><Menu size={19} /></span>
+          <span>More</span>
+        </button>
+      </nav>
     </div>
   )
 }
@@ -724,6 +748,7 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
   const [ruleStates, setRuleStates] = useState<Record<string, RuleStatus>>({})
   const [selectedMistakes, setSelectedMistakes] = useState<string[]>([])
   const [customMistake, setCustomMistake] = useState('')
+  const [useCustomSymbol, setUseCustomSymbol] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -736,6 +761,10 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
 
   const selectedStrategy = activeStrategies.find((s: Strategy) => s.id === form.strategy_id)
   const strategyRules: Rule[] = rulesByStrategy[form.strategy_id] || []
+  const pairOptions = useMemo(() => {
+    const strategyMarkets = (selectedStrategy?.markets || []).map((market: string) => market.trim().toUpperCase()).filter(Boolean)
+    return Array.from(new Set([...strategyMarkets, ...popularPairs]))
+  }, [selectedStrategy])
   const plannedRR = useMemo(() => {
     const entry = Number(form.entry_price), stop = Number(form.stop_loss), target = Number(form.take_profit)
     if (!entry || !stop || !target || entry === stop) return null
@@ -824,7 +853,7 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
         <PanelHeader title="Trade context" subtitle="Strategy, instrument, time and market session" />
         <div className="form-grid three">
           <label>Strategy<select value={form.strategy_id} onChange={(e) => setForm({ ...form, strategy_id: e.target.value })}>{activeStrategies.map((s: Strategy) => <option key={s.id} value={s.id}>{s.name} · v{s.current_version}.0</option>)}</select></label>
-          <label>Symbol<input value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} placeholder="XAUUSD" /></label>
+          <label>Pair / instrument<div className="pair-select-stack"><select value={useCustomSymbol ? '__CUSTOM__' : form.symbol} onChange={(e) => { const value = e.target.value; if (value === '__CUSTOM__') { setUseCustomSymbol(true); setForm({ ...form, symbol: '' }) } else { setUseCustomSymbol(false); setForm({ ...form, symbol: value }) } }}>{pairOptions.map((pair) => <option key={pair} value={pair}>{pair}</option>)}<option value="__CUSTOM__">Other / custom symbol…</option></select>{useCustomSymbol && <input autoFocus value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value.toUpperCase() })} placeholder="Type broker symbol, e.g. USOIL" />}</div></label>
           <label>Direction<select value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}><option value="long">Long</option><option value="short">Short</option></select></label>
           <label>Date<input type="date" value={form.trade_date} onChange={(e) => setForm({ ...form, trade_date: e.target.value })} /></label>
           <label>Entry time<input type="time" value={form.entry_time} onChange={(e) => setForm({ ...form, entry_time: e.target.value })} /></label>
