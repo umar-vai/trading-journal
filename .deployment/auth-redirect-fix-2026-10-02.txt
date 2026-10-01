@@ -1,0 +1,1 @@
+Auth signup confirmations now explicitly redirect to the GitHub Pages app base path.
