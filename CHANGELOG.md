@@ -11,3 +11,4 @@
 - Broker-dependent instruments such as indices and crypto no longer receive a misleading generic lot number; the journal records no lot size until a valid contract specification is available.
 - Added direct Quick Trade chart evidence upload with clipboard paste, image preview and Before Entry / Entry / Chart classification.
 - Added economic-calendar proximity warnings for relevant high/medium-impact events within ±60 minutes of the planned entry time.
+- Added contextual superscript info tooltips across dashboard metrics, reports, Quick Trade fields, strategy comparison, correlations, playbook and calendar terms; desktop supports hover/focus and mobile supports tap-to-open explanations.
