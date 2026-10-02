@@ -1,0 +1,47 @@
+name: Apply risk sizing evidence and news warning
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/apply-risk-evidence-news-warning.mjs'
+      - '.github/workflows/apply-risk-evidence-news-warning.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Apply enhancement patch
+        run: node scripts/apply-risk-evidence-news-warning.mjs
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify production build
+        run: npm run build
+
+      - name: Commit generated changes
+        run: |
+          if git diff --quiet -- src/Phase2Workspace.tsx src/phase2.css; then
+            echo "No enhancement changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/Phase2Workspace.tsx src/phase2.css
+          git commit -m "feat: add broker lot sizing evidence upload and event warnings"
+          git push origin HEAD:main
