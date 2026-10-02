@@ -11,6 +11,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
+import { InfoLabel, InfoTip } from './InfoTip'
 
 export const DEFAULT_MISTAKES = [
   'Early Entry',
@@ -327,7 +328,7 @@ export function ReportsPage({ trades, strategies, checks, mistakes, images }: an
 }
 
 function ReportMetric({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
-  return <div className="metric-card"><div className="metric-top"><span>{label}</span></div><strong className={tone || ''}>{value}</strong></div>
+  return <div className="metric-card"><div className="metric-top"><span className="metric-label-with-help">{label}<InfoTip label={label} /></span></div><strong className={tone || ''}>{value}</strong></div>
 }
 
 export function TradeEvidencePanel({ trade, images, mistakes, userId, onChanged }: any) {

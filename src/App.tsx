@@ -33,6 +33,7 @@ import {
   YAxis,
 } from 'recharts'
 import { supabase } from './lib/supabase'
+import { InfoLabel, InfoTip } from './InfoTip'
 import { AdvancedAnalytics, DEFAULT_MISTAKES, ReportsPage, TradeEvidencePanel, exportJournalXlsx } from './AdvancedFeatures'
 import { cacheJournalSnapshot, clearJournalSnapshot, loadJournalSnapshot } from './lib/offlineCache'
 
@@ -544,7 +545,7 @@ function NewsPage({ strategies }: { strategies: Strategy[] }) {
               <option value="crypto">Crypto</option>
             </select>
           </label>
-          <label>Instrument
+          <label><InfoLabel label="Instrument" />
             <select value={symbol} onChange={(event) => setSymbol(event.target.value)}>
               <option value="">All instruments</option>
               {strategySymbols.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -706,7 +707,7 @@ function Dashboard({ trades, strategies, checks, strategyMap, userId, onNewTrade
 function MetricCard({ label, value, detail, icon: Icon, trend }: any) {
   return (
     <div className="metric-card">
-      <div className="metric-top"><span>{label}</span><div className="metric-icon"><Icon size={17} /></div></div>
+      <div className="metric-top"><span className="metric-label-with-help">{label}<InfoTip label={label} /></span><div className="metric-icon"><Icon size={17} /></div></div>
       <strong className={trend === 'up' ? 'positive' : trend === 'down' ? 'negative' : ''}>{value}</strong>
       <small>{detail}</small>
     </div>
@@ -848,7 +849,7 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
             <label>Strategy name<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="London Liquidity Sweep" /></label>
             <label>Markets<input value={form.markets} onChange={(e) => setForm({ ...form, markets: e.target.value })} placeholder="XAUUSD, NAS100" /></label>
             <label>Primary timeframe<select value={form.primary_timeframe} onChange={(e) => setForm({ ...form, primary_timeframe: e.target.value })}>{timeframes.map((t) => <option key={t}>{t}</option>)}</select></label>
-            <label>Higher timeframe<select value={form.higher_timeframe} onChange={(e) => setForm({ ...form, higher_timeframe: e.target.value })}>{timeframes.map((t) => <option key={t}>{t}</option>)}</select></label>
+            <label><InfoLabel label="Higher timeframe" /><select value={form.higher_timeframe} onChange={(e) => setForm({ ...form, higher_timeframe: e.target.value })}>{timeframes.map((t) => <option key={t}>{t}</option>)}</select></label>
             <label>Minimum RR<input type="number" min="0" step="0.1" value={form.min_rr} onChange={(e) => setForm({ ...form, min_rr: e.target.value })} /></label>
             <label>Preferred session<select value={form.preferred_session} onChange={(e) => setForm({ ...form, preferred_session: e.target.value })}>{sessions.map((s) => <option key={s}>{s}</option>)}</select></label>
             <label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option value="active">Active</option><option value="testing">Testing</option><option value="archived">Archived</option></select></label>
@@ -1001,14 +1002,14 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
       <section className="panel">
         <PanelHeader title="Trade context" subtitle="Strategy, instrument, time and market session" />
         <div className="form-grid three">
-          <label>Strategy<select value={form.strategy_id} onChange={(e) => setForm({ ...form, strategy_id: e.target.value })}>{activeStrategies.map((s: Strategy) => <option key={s.id} value={s.id}>{s.name} · v{s.current_version}.0</option>)}</select></label>
+          <label><InfoLabel label="Strategy" /><select value={form.strategy_id} onChange={(e) => setForm({ ...form, strategy_id: e.target.value })}>{activeStrategies.map((s: Strategy) => <option key={s.id} value={s.id}>{s.name} · v{s.current_version}.0</option>)}</select></label>
           <label>Pair / instrument<div className="pair-select-stack"><select value={useCustomSymbol ? '__CUSTOM__' : form.symbol} onChange={(e) => { const value = e.target.value; if (value === '__CUSTOM__') { setUseCustomSymbol(true); setForm({ ...form, symbol: '' }) } else { setUseCustomSymbol(false); setForm({ ...form, symbol: value }) } }}>{pairOptions.map((pair) => <option key={pair} value={pair}>{pair}</option>)}<option value="__CUSTOM__">Other / custom symbol…</option></select>{useCustomSymbol && <input autoFocus value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value.toUpperCase() })} placeholder="Type broker symbol, e.g. USOIL" />}</div></label>
-          <label>Direction<select value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}><option value="long">Long</option><option value="short">Short</option></select></label>
+          <label><InfoLabel label="Direction" /><select value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}><option value="long">Long</option><option value="short">Short</option></select></label>
           <label>Date<input type="date" value={form.trade_date} onChange={(e) => setForm({ ...form, trade_date: e.target.value })} /></label>
           <label>Entry time<input type="time" value={form.entry_time} onChange={(e) => setForm({ ...form, entry_time: e.target.value })} /></label>
           <label>Exit time<input type="time" value={form.exit_time} onChange={(e) => setForm({ ...form, exit_time: e.target.value })} /></label>
           <label>Timezone<input value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })} /></label>
-          <label>Session<select value={form.session} onChange={(e) => setForm({ ...form, session: e.target.value })}>{sessions.map((s) => <option key={s}>{s}</option>)}</select></label>
+          <label><InfoLabel label="Session" /><select value={form.session} onChange={(e) => setForm({ ...form, session: e.target.value })}>{sessions.map((s) => <option key={s}>{s}</option>)}</select></label>
           <label>Entry timeframe<select value={form.timeframe} onChange={(e) => setForm({ ...form, timeframe: e.target.value })}>{timeframes.map((t) => <option key={t}>{t}</option>)}</select></label>
         </div>
       </section>
@@ -1032,13 +1033,13 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
       <section className="panel">
         <PanelHeader title="Risk & result" subtitle="R-multiple is the primary normalized performance metric" />
         <div className="form-grid four">
-          <label>Entry price<input type="number" step="any" value={form.entry_price} onChange={(e) => setForm({ ...form, entry_price: e.target.value })} /></label>
-          <label>Stop loss<input type="number" step="any" value={form.stop_loss} onChange={(e) => setForm({ ...form, stop_loss: e.target.value })} /></label>
-          <label>Take profit<input type="number" step="any" value={form.take_profit} onChange={(e) => setForm({ ...form, take_profit: e.target.value })} /></label>
-          <label>Planned RR<input readOnly value={plannedRR ? `1 : ${plannedRR.toFixed(2)}` : ''} placeholder="Auto-calculated" /></label>
-          <label>Exit price<input type="number" step="any" value={form.exit_price} onChange={(e) => setForm({ ...form, exit_price: e.target.value })} /></label>
-          <label>Risk %<input type="number" step="0.01" value={form.risk_percent} onChange={(e) => setForm({ ...form, risk_percent: e.target.value })} /></label>
-          <label>Actual R<input type="number" step="0.01" value={form.actual_r} onChange={(e) => setForm({ ...form, actual_r: e.target.value })} placeholder="e.g. 2.15 or -1" /></label>
+          <label><InfoLabel label="Entry price" /><input type="number" step="any" value={form.entry_price} onChange={(e) => setForm({ ...form, entry_price: e.target.value })} /></label>
+          <label><InfoLabel label="Stop loss" /><input type="number" step="any" value={form.stop_loss} onChange={(e) => setForm({ ...form, stop_loss: e.target.value })} /></label>
+          <label><InfoLabel label="Take profit" /><input type="number" step="any" value={form.take_profit} onChange={(e) => setForm({ ...form, take_profit: e.target.value })} /></label>
+          <label><InfoLabel label="Planned RR" /><input readOnly value={plannedRR ? `1 : ${plannedRR.toFixed(2)}` : ''} placeholder="Auto-calculated" /></label>
+          <label><InfoLabel label="Exit price" /><input type="number" step="any" value={form.exit_price} onChange={(e) => setForm({ ...form, exit_price: e.target.value })} /></label>
+          <label><InfoLabel label="Risk %" /><input type="number" step="0.01" value={form.risk_percent} onChange={(e) => setForm({ ...form, risk_percent: e.target.value })} /></label>
+          <label><InfoLabel label="Actual R" /><input type="number" step="0.01" value={form.actual_r} onChange={(e) => setForm({ ...form, actual_r: e.target.value })} placeholder="e.g. 2.15 or -1" /></label>
           <label>P/L amount<input type="number" step="0.01" value={form.pnl} onChange={(e) => setForm({ ...form, pnl: e.target.value })} placeholder="Optional" /></label>
           <label>Result<select value={form.result} onChange={(e) => setForm({ ...form, result: e.target.value })}><option value="win">Win</option><option value="loss">Loss</option><option value="breakeven">Breakeven</option><option value="open">Open</option><option value="cancelled">Cancelled</option></select></label>
           <label>Execution grade<select value={form.grade} onChange={(e) => setForm({ ...form, grade: e.target.value })}><option>A+</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
