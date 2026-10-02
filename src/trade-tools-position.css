@@ -1,0 +1,60 @@
+/* Keep the global Trade tools launcher clear of sticky actions and mobile navigation. */
+
+.p2-launcher {
+  right: 22px;
+  bottom: 88px;
+  z-index: 38;
+}
+
+/* Reserve a small visual safety zone at the bottom of full-page journal forms. */
+@media (min-width: 681px) {
+  .page-content {
+    padding-bottom: 96px;
+  }
+}
+
+@media (max-width: 680px) {
+  .p2-launcher {
+    right: 12px;
+    bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+    padding: 9px 11px;
+    border-radius: 13px;
+    gap: 6px;
+    z-index: 44;
+  }
+
+  .p2-launcher svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .p2-launcher span {
+    font-size: 11px;
+  }
+
+  .p2-launcher b {
+    min-width: 17px;
+    height: 17px;
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 420px) {
+  .p2-launcher {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 13px;
+    justify-content: center;
+  }
+
+  .p2-launcher span {
+    display: none;
+  }
+
+  .p2-launcher b {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+  }
+}
