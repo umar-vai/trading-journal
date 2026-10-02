@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import Phase2Workspace from './Phase2Workspace'
 import './styles.css'
+import './info-tip-compact.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
