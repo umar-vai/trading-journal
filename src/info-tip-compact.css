@@ -1,0 +1,24 @@
+/* Compact visual treatment for contextual info buttons.
+   Tooltip behavior remains unchanged; only the visible superscript control is reduced. */
+.info-tip-wrap {
+  margin-left: 1px;
+  top: -.38em;
+}
+
+.info-tip-button {
+  width: 11px;
+  height: 11px;
+  min-width: 11px;
+  border-width: 1px;
+  font-size: 6.5px;
+  font-weight: 800;
+  line-height: 1;
+  opacity: .82;
+}
+
+.info-tip-button:hover,
+.info-tip-button:focus-visible,
+.info-tip-wrap.is-open .info-tip-button {
+  opacity: 1;
+  transform: translateY(-.5px);
+}
