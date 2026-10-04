@@ -34,6 +34,7 @@ import {
 } from 'recharts'
 import { supabase } from './lib/supabase'
 import { InfoLabel, InfoTip } from './InfoTip'
+import { PendingTradeScreenshots, RuleExamplesPanel, uploadPendingTradeScreenshots, type PendingTradeScreenshot } from './ScreenshotFeatures'
 import { AdvancedAnalytics, DEFAULT_MISTAKES, ReportsPage, TradeEvidencePanel, exportJournalXlsx } from './AdvancedFeatures'
 import { cacheJournalSnapshot, clearJournalSnapshot, loadJournalSnapshot } from './lib/offlineCache'
 
@@ -881,6 +882,7 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
                 {strategyRules.slice(0, 4).map((rule: Rule) => <div key={rule.id}><Check size={14} /><span>{rule.rule_text}</span></div>)}
                 {strategyRules.length > 4 && <small>+{strategyRules.length - 4} more rules</small>}
               </div>
+              <RuleExamplesPanel strategy={strategy} rules={strategyRules} userId={user.id} />
               <div className="strategy-card-actions"><button className="secondary-button" onClick={() => startEdit(strategy)}>Edit rules</button><button className="text-button" onClick={() => archive(strategy)}>{strategy.status === 'archived' ? 'Restore' : 'Archive'}</button></div>
             </article>
           )
@@ -898,6 +900,7 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
   const [ruleStates, setRuleStates] = useState<Record<string, RuleStatus>>({})
   const [selectedMistakes, setSelectedMistakes] = useState<string[]>([])
   const [customMistake, setCustomMistake] = useState('')
+  const [pendingScreenshots, setPendingScreenshots] = useState<PendingTradeScreenshot[]>([])
   const [useCustomSymbol, setUseCustomSymbol] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -987,6 +990,16 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
       const { error: mistakeError } = await supabase.from('trade_mistakes').insert(mistakeRows)
       if (mistakeError) { await supabase.from('trades').delete().eq('id', trade.id); setError(mistakeError.message); setBusy(false); return }
     }
+    if (pendingScreenshots.length) {
+      try {
+        await uploadPendingTradeScreenshots({ screenshots: pendingScreenshots, userId: user.id, tradeId: trade.id })
+      } catch (screenshotError: any) {
+        await supabase.from('trades').delete().eq('id', trade.id)
+        setError(`Screenshot upload failed: ${screenshotError?.message || 'Please try again.'}`)
+        setBusy(false)
+        return
+      }
+    }
     setBusy(false)
     onSaved()
   }
@@ -1056,6 +1069,8 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
         <div className="custom-mistake-row trade-form-custom-mistake"><input value={customMistake} onChange={(e) => setCustomMistake(e.target.value)} placeholder="Add a custom mistake" /><button type="button" className="secondary-button" disabled={!customMistake.trim()} onClick={() => { const value = customMistake.trim(); if (value && !selectedMistakes.includes(value)) setSelectedMistakes([...selectedMistakes, value]); setCustomMistake('') }}><Plus size={15} /> Add</button></div>
         {selectedMistakes.length > 0 && <p className="selected-mistake-summary">Selected: {selectedMistakes.join(' · ')}</p>}
       </section>
+
+      <PendingTradeScreenshots value={pendingScreenshots} onChange={setPendingScreenshots} />
 
       <section className="panel">
         <PanelHeader title="Journal notes" subtitle="Record what you saw before the result can influence your memory" />
