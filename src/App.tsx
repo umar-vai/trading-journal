@@ -40,6 +40,7 @@ import { cacheJournalSnapshot, clearJournalSnapshot, loadJournalSnapshot } from 
 
 type View = 'dashboard' | 'strategies' | 'new-trade' | 'journal' | 'news' | 'analytics' | 'reports'
 type RuleStatus = 'followed' | 'violated' | 'na'
+type RuleImportance = 'mandatory' | 'important' | 'optional'
 
 type Strategy = {
   id: string
@@ -62,6 +63,7 @@ type Rule = {
   user_id: string
   rule_text: string
   sort_order: number
+  importance: RuleImportance
   is_active: boolean
 }
 
@@ -104,6 +106,7 @@ type RuleCheck = {
   rule_id?: string | null
   rule_text_snapshot: string
   rule_sort_order: number
+  rule_importance_snapshot: RuleImportance
   status: RuleStatus
 }
 
@@ -727,9 +730,18 @@ function ResultPill({ result }: { result?: string | null }) {
   return <span className={`result-pill ${result || 'open'}`}>{result || 'open'}</span>
 }
 
+function RuleImportanceBadge({ importance }: { importance?: RuleImportance | null }) {
+  const value: RuleImportance = importance || 'important'
+  const labels: Record<RuleImportance, string> = { mandatory: 'Mandatory', important: 'High priority', optional: 'Bonus' }
+  return <span className={`rule-importance-badge ${value}`}>{labels[value]}</span>
+}
+
 function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
   const emptyForm = {
-    name: '', description: '', markets: '', primary_timeframe: '5M', higher_timeframe: '1H', min_rr: '2', preferred_session: 'London', status: 'active', rules: ['', '', ''],
+    name: '', description: '', markets: '', primary_timeframe: '5M', higher_timeframe: '1H', min_rr: '2', preferred_session: 'London', status: 'active',
+    rules: ['', '', ''],
+    rule_ids: [null, null, null],
+    rule_importance: ['important', 'important', 'important'] as RuleImportance[],
   }
   const [form, setForm] = useState<any>(emptyForm)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -737,13 +749,19 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
+  function freshEmptyForm() {
+    return { ...emptyForm, rules: [...emptyForm.rules], rule_ids: [...emptyForm.rule_ids], rule_importance: [...emptyForm.rule_importance] }
+  }
+
   function startCreate() {
     setEditingId(null)
-    setForm(emptyForm)
+    setForm(freshEmptyForm())
     setShowForm(true)
   }
 
   function startEdit(strategy: Strategy) {
+    const existingRules: Rule[] = rulesByStrategy[strategy.id] || []
+    const targetLength = Math.max(existingRules.length + 1, 3)
     setEditingId(strategy.id)
     setForm({
       name: strategy.name,
@@ -754,7 +772,9 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
       min_rr: strategy.min_rr ?? '',
       preferred_session: strategy.preferred_session || 'London',
       status: strategy.status,
-      rules: (rulesByStrategy[strategy.id] || []).map((r: Rule) => r.rule_text).concat(['']).slice(0, Math.max((rulesByStrategy[strategy.id] || []).length + 1, 3)),
+      rules: Array.from({ length: targetLength }, (_, index) => existingRules[index]?.rule_text || ''),
+      rule_ids: Array.from({ length: targetLength }, (_, index) => existingRules[index]?.id || null),
+      rule_importance: Array.from({ length: targetLength }, (_, index) => existingRules[index]?.importance || 'important'),
     })
     setShowForm(true)
   }
@@ -763,21 +783,45 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
     setForm((prev: any) => ({ ...prev, rules: prev.rules.map((r: string, i: number) => i === index ? value : r) }))
   }
 
+  function updateRuleImportance(index: number, importance: RuleImportance) {
+    setForm((prev: any) => ({ ...prev, rule_importance: prev.rule_importance.map((value: RuleImportance, i: number) => i === index ? importance : value) }))
+  }
+
   function addRule() {
-    setForm((prev: any) => ({ ...prev, rules: [...prev.rules, ''] }))
+    setForm((prev: any) => ({
+      ...prev,
+      rules: [...prev.rules, ''],
+      rule_ids: [...prev.rule_ids, null],
+      rule_importance: [...prev.rule_importance, 'important'],
+    }))
   }
 
   function removeRule(index: number) {
-    setForm((prev: any) => ({ ...prev, rules: prev.rules.filter((_: string, i: number) => i !== index) }))
+    setForm((prev: any) => ({
+      ...prev,
+      rules: prev.rules.filter((_: string, i: number) => i !== index),
+      rule_ids: prev.rule_ids.filter((_: string | null, i: number) => i !== index),
+      rule_importance: prev.rule_importance.filter((_: RuleImportance, i: number) => i !== index),
+    }))
   }
 
   async function save(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError('')
-    const cleanedRules = form.rules.map((r: string) => r.trim()).filter(Boolean)
+
+    const cleanedEntries = form.rules
+      .map((value: string, index: number) => ({
+        id: form.rule_ids?.[index] || null,
+        rule_text: value.trim(),
+        importance: (form.rule_importance?.[index] || 'important') as RuleImportance,
+      }))
+      .filter((entry: any) => Boolean(entry.rule_text))
+      .map((entry: any, index: number) => ({ ...entry, sort_order: index }))
+
     if (!form.name.trim()) { setError('Strategy name is required.'); setBusy(false); return }
-    if (cleanedRules.length === 0) { setError('Add at least one rule.'); setBusy(false); return }
+    if (cleanedEntries.length === 0) { setError('Add at least one rule.'); setBusy(false); return }
+
     const payload = {
       user_id: user.id,
       name: form.name.trim(),
@@ -793,15 +837,23 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
     if (!editingId) {
       const { data: created, error: strategyError } = await supabase.from('strategies').insert(payload).select('*').single()
       if (strategyError) { setError(strategyError.message); setBusy(false); return }
-      const ruleRows = cleanedRules.map((ruleText: string, index: number) => ({ strategy_id: created.id, user_id: user.id, rule_text: ruleText, sort_order: index }))
+
+      const ruleRows = cleanedEntries.map((entry: any) => ({
+        strategy_id: created.id,
+        user_id: user.id,
+        rule_text: entry.rule_text,
+        sort_order: entry.sort_order,
+        importance: entry.importance,
+      }))
       const { error: ruleError } = await supabase.from('strategy_rules').insert(ruleRows)
       if (ruleError) { setError(ruleError.message); setBusy(false); return }
+
       await supabase.from('strategy_versions').insert({
         strategy_id: created.id,
         user_id: user.id,
         version: 1,
         strategy_snapshot: { ...payload, current_version: 1 },
-        rules_snapshot: cleanedRules.map((ruleText: string, index: number) => ({ rule_text: ruleText, sort_order: index })),
+        rules_snapshot: cleanedEntries.map(({ rule_text, sort_order, importance }: any) => ({ rule_text, sort_order, importance })),
         change_note: 'Initial strategy version',
       })
     } else {
@@ -809,16 +861,42 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
       const nextVersion = (current?.current_version || 1) + 1
       const { error: updateError } = await supabase.from('strategies').update({ ...payload, current_version: nextVersion }).eq('id', editingId)
       if (updateError) { setError(updateError.message); setBusy(false); return }
-      await supabase.from('strategy_rules').delete().eq('strategy_id', editingId)
-      const ruleRows = cleanedRules.map((ruleText: string, index: number) => ({ strategy_id: editingId, user_id: user.id, rule_text: ruleText, sort_order: index }))
-      const { error: ruleError } = await supabase.from('strategy_rules').insert(ruleRows)
-      if (ruleError) { setError(ruleError.message); setBusy(false); return }
+
+      const currentRules: Rule[] = rulesByStrategy[editingId] || []
+      const keptIds = new Set(cleanedEntries.map((entry: any) => entry.id).filter(Boolean))
+      const removedIds = currentRules.filter((rule) => !keptIds.has(rule.id)).map((rule) => rule.id)
+      if (removedIds.length) {
+        const { error: deleteError } = await supabase.from('strategy_rules').delete().in('id', removedIds)
+        if (deleteError) { setError(deleteError.message); setBusy(false); return }
+      }
+
+      for (const entry of cleanedEntries.filter((item: any) => item.id)) {
+        const { error: ruleUpdateError } = await supabase
+          .from('strategy_rules')
+          .update({ rule_text: entry.rule_text, sort_order: entry.sort_order, importance: entry.importance, is_active: true })
+          .eq('id', entry.id)
+          .eq('strategy_id', editingId)
+        if (ruleUpdateError) { setError(ruleUpdateError.message); setBusy(false); return }
+      }
+
+      const newEntries = cleanedEntries.filter((entry: any) => !entry.id)
+      if (newEntries.length) {
+        const { error: insertError } = await supabase.from('strategy_rules').insert(newEntries.map((entry: any) => ({
+          strategy_id: editingId,
+          user_id: user.id,
+          rule_text: entry.rule_text,
+          sort_order: entry.sort_order,
+          importance: entry.importance,
+        })))
+        if (insertError) { setError(insertError.message); setBusy(false); return }
+      }
+
       const { error: versionError } = await supabase.from('strategy_versions').insert({
         strategy_id: editingId,
         user_id: user.id,
         version: nextVersion,
         strategy_snapshot: { ...payload, current_version: nextVersion },
-        rules_snapshot: cleanedRules.map((ruleText: string, index: number) => ({ rule_text: ruleText, sort_order: index })),
+        rules_snapshot: cleanedEntries.map(({ rule_text, sort_order, importance }: any) => ({ rule_text, sort_order, importance })),
         change_note: `Updated to version ${nextVersion}`,
       })
       if (versionError) { setError(versionError.message); setBusy(false); return }
@@ -827,7 +905,7 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
     setBusy(false)
     setShowForm(false)
     setEditingId(null)
-    setForm(emptyForm)
+    setForm(freshEmptyForm())
     await onChanged()
   }
 
@@ -845,7 +923,7 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
 
       {showForm && (
         <form className="panel strategy-form" onSubmit={save}>
-          <PanelHeader title={editingId ? 'Edit strategy' : 'Create strategy'} subtitle={editingId ? 'This change will create a new version.' : 'Start with the setup and its non-negotiable rules.'} action={<button type="button" className="icon-button" onClick={() => setShowForm(false)}><X size={18} /></button>} />
+          <PanelHeader title={editingId ? 'Edit strategy' : 'Create strategy'} subtitle={editingId ? 'Rule IDs and chart examples stay attached while this creates a new version.' : 'Start with the setup and its non-negotiable rules.'} action={<button type="button" className="icon-button" onClick={() => setShowForm(false)}><X size={18} /></button>} />
           <div className="form-grid two">
             <label>Strategy name<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="London Liquidity Sweep" /></label>
             <label>Markets<input value={form.markets} onChange={(e) => setForm({ ...form, markets: e.target.value })} placeholder="XAUUSD, NAS100" /></label>
@@ -856,14 +934,28 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
             <label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option value="active">Active</option><option value="testing">Testing</option><option value="archived">Archived</option></select></label>
             <label className="span-two">Description<textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What market condition and setup defines this strategy?" /></label>
           </div>
+
           <div className="rules-builder">
-            <div className="rules-builder-head"><div><h4>Execution rules</h4><p>Each new trade will show these as Followed / Violated / N/A.</p></div><button type="button" className="secondary-button" onClick={addRule}><Plus size={16} /> Add rule</button></div>
+            <div className="rules-builder-head"><div><h4>Execution rules</h4><p>Classify every rule by how essential it is to the setup.</p></div><button type="button" className="secondary-button" onClick={addRule}><Plus size={16} /> Add rule</button></div>
             <div className="rule-input-list">
-              {form.rules.map((rule: string, index: number) => (
-                <div className="rule-input" key={index}><span>{index + 1}</span><input value={rule} onChange={(e) => updateRule(index, e.target.value)} placeholder={`Rule ${index + 1}`} /><button type="button" onClick={() => removeRule(index)}><X size={16} /></button></div>
-              ))}
+              {form.rules.map((rule: string, index: number) => {
+                const importance: RuleImportance = form.rule_importance?.[index] || 'important'
+                return (
+                  <div className="rule-input rule-input-with-priority" key={form.rule_ids?.[index] || index}>
+                    <span>{index + 1}</span>
+                    <input value={rule} onChange={(e) => updateRule(index, e.target.value)} placeholder={`Rule ${index + 1}`} />
+                    <div className="rule-priority-selector" role="group" aria-label={`Importance for rule ${index + 1}`}>
+                      <button type="button" title="100% mandatory — this must be present" className={importance === 'mandatory' ? 'selected mandatory' : ''} onClick={() => updateRuleImportance(index, 'mandatory')}>Mandatory</button>
+                      <button type="button" title="Highly important — strongly preferred" className={importance === 'important' ? 'selected important' : ''} onClick={() => updateRuleImportance(index, 'important')}>Important</button>
+                      <button type="button" title="Nice to have — trade can still be valid without it" className={importance === 'optional' ? 'selected optional' : ''} onClick={() => updateRuleImportance(index, 'optional')}>Bonus</button>
+                    </div>
+                    <button type="button" onClick={() => removeRule(index)} aria-label={`Remove rule ${index + 1}`}><X size={16} /></button>
+                  </div>
+                )
+              })}
             </div>
           </div>
+
           {error && <div className="alert error">{error}</div>}
           <div className="form-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancel</button><button className="primary-button" disabled={busy}>{busy ? <RefreshCw className="spin" size={17} /> : <Save size={17} />}{editingId ? 'Save new version' : 'Create strategy'}</button></div>
         </form>
@@ -879,7 +971,7 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
               <p>{strategy.description || 'No description yet.'}</p>
               <div className="strategy-meta"><span>{strategy.primary_timeframe || '—'} entry</span><span>{strategy.higher_timeframe || '—'} HTF</span><span>{strategy.min_rr ? `Min 1:${strategy.min_rr}` : 'RR flexible'}</span></div>
               <div className="rule-preview">
-                {strategyRules.slice(0, 4).map((rule: Rule) => <div key={rule.id}><Check size={14} /><span>{rule.rule_text}</span></div>)}
+                {strategyRules.slice(0, 4).map((rule: Rule) => <div key={rule.id}><Check size={14} /><span>{rule.rule_text}</span><RuleImportanceBadge importance={rule.importance} /></div>)}
                 {strategyRules.length > 4 && <small>+{strategyRules.length - 4} more rules</small>}
               </div>
               <RuleExamplesPanel strategy={strategy} rules={strategyRules} userId={user.id} />
@@ -929,6 +1021,7 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
     const violated = values.filter((v) => v === 'violated').length
     return followed + violated === 0 ? 0 : (followed / (followed + violated)) * 100
   }, [ruleStates])
+  const mandatoryViolationCount = useMemo(() => strategyRules.filter((rule) => rule.importance === 'mandatory' && ruleStates[rule.id] === 'violated').length, [strategyRules, ruleStates])
 
   function toggleMistake(mistake: string) {
     setSelectedMistakes((current) => current.includes(mistake) ? current.filter((item) => item !== mistake) : [...current, mistake])
@@ -980,6 +1073,7 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
         rule_id: rule.id,
         rule_text_snapshot: rule.rule_text,
         rule_sort_order: rule.sort_order,
+        rule_importance_snapshot: rule.importance || 'important',
         status: ruleStates[rule.id] || 'na',
       }))
       const { error: checkError } = await supabase.from('trade_rule_checks').insert(checkRows)
@@ -1032,7 +1126,7 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
         <div className="checklist">
           {strategyRules.map((rule, index) => (
             <div className="checklist-row" key={rule.id}>
-              <div className="rule-copy"><span>{index + 1}</span><strong>{rule.rule_text}</strong></div>
+              <div className="rule-copy"><span>{index + 1}</span><div className="rule-copy-text"><strong>{rule.rule_text}</strong><RuleImportanceBadge importance={rule.importance} /></div></div>
               <div className="tri-toggle">
                 <button type="button" className={ruleStates[rule.id] === 'followed' ? 'selected good' : ''} onClick={() => setRuleStates({ ...ruleStates, [rule.id]: 'followed' })}><Check size={15} /> Followed</button>
                 <button type="button" className={ruleStates[rule.id] === 'violated' ? 'selected bad' : ''} onClick={() => setRuleStates({ ...ruleStates, [rule.id]: 'violated' })}><X size={15} /> Violated</button>
@@ -1041,6 +1135,7 @@ function NewTradePage({ user, strategies, rulesByStrategy, onSaved }: any) {
             </div>
           ))}
         </div>
+        {mandatoryViolationCount > 0 && <div className="mandatory-rule-warning">{mandatoryViolationCount} mandatory rule{mandatoryViolationCount > 1 ? 's were' : ' was'} violated. The trade can still be logged so the journal records the process failure.</div>}
       </section>
 
       <section className="panel">
@@ -1135,7 +1230,7 @@ function TradeDetails({ trade, checks }: { trade: Trade; checks: RuleCheck[] }) 
   return (
     <div className="trade-details">
       <div className="detail-grid"><div><span>Entry / SL / TP</span><strong>{formatNumber(trade.entry_price, 3)} / {formatNumber(trade.stop_loss, 3)} / {formatNumber(trade.take_profit, 3)}</strong></div><div><span>Planned RR</span><strong>{trade.planned_rr ? `1:${formatNumber(trade.planned_rr)}` : '—'}</strong></div><div><span>Emotion</span><strong>{trade.emotion || '—'}</strong></div><div><span>Confidence</span><strong>{trade.confidence ? `${trade.confidence}/5` : '—'}</strong></div></div>
-      <div className="detail-columns"><div><h4>Rule compliance</h4>{checks.length ? checks.map((check) => <div className={`rule-history ${check.status}`} key={check.id}>{check.status === 'followed' ? <Check size={14} /> : check.status === 'violated' ? <X size={14} /> : <span>—</span>}<span>{check.rule_text_snapshot}</span></div>) : <p>No rule checks recorded.</p>}</div><div><h4>Journal</h4><p><strong>Observed:</strong> {trade.description || '—'}</p><p><strong>Thesis:</strong> {trade.thesis || '—'}</p><p><strong>Review:</strong> {trade.post_trade_review || '—'}</p></div></div>
+      <div className="detail-columns"><div><h4>Rule compliance</h4>{checks.length ? checks.map((check) => <div className={`rule-history ${check.status}`} key={check.id}>{check.status === 'followed' ? <Check size={14} /> : check.status === 'violated' ? <X size={14} /> : <span>—</span>}<span>{check.rule_text_snapshot}</span><RuleImportanceBadge importance={check.rule_importance_snapshot} /></div>) : <p>No rule checks recorded.</p>}</div><div><h4>Journal</h4><p><strong>Observed:</strong> {trade.description || '—'}</p><p><strong>Thesis:</strong> {trade.thesis || '—'}</p><p><strong>Review:</strong> {trade.post_trade_review || '—'}</p></div></div>
     </div>
   )
 }
