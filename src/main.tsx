@@ -5,6 +5,7 @@ import Phase2Workspace from './Phase2Workspace'
 import './styles.css'
 import './info-tip-compact.css'
 import './trade-tools-position.css'
+import './screenshot-features.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
