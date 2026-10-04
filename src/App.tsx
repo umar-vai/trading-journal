@@ -35,6 +35,7 @@ import {
 import { supabase } from './lib/supabase'
 import { InfoLabel, InfoTip } from './InfoTip'
 import { PendingTradeScreenshots, RuleExamplesPanel, uploadPendingTradeScreenshots, type PendingTradeScreenshot } from './ScreenshotFeatures'
+import { SharedStrategyPage, StrategyShareControls } from './StrategySharing'
 import { AdvancedAnalytics, DEFAULT_MISTAKES, ReportsPage, TradeEvidencePanel, exportJournalXlsx } from './AdvancedFeatures'
 import { cacheJournalSnapshot, clearJournalSnapshot, loadJournalSnapshot } from './lib/offlineCache'
 
@@ -133,6 +134,9 @@ function downloadText(filename: string, text: string, mime: string) {
 export default function App() {
   const [session, setSession] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const query = new URLSearchParams(window.location.search)
+  const shareToken = query.get('share')
+  const shareAuthRequested = query.get('auth') === '1'
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -144,6 +148,13 @@ export default function App() {
   }, [])
 
   if (loading) return <FullScreenLoader />
+  if (shareToken && (!shareAuthRequested || session)) {
+    return <SharedStrategyPage token={shareToken} session={session} onRequireAuth={() => {
+      const url = new URL(window.location.href)
+      url.searchParams.set('auth', '1')
+      window.location.assign(url.toString())
+    }} />
+  }
   if (!session) return <AuthScreen />
   return <TradingJournal user={session.user} />
 }
@@ -179,7 +190,7 @@ function AuthScreen() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
+          emailRedirectTo: `${window.location.origin}${window.location.pathname}${window.location.search}` ,
           data: { display_name: displayName || email.split('@')[0] },
         },
       })
@@ -196,7 +207,7 @@ function AuthScreen() {
     }
     setBusy(true)
     setError('')
-    const redirectTo = `${window.location.origin}${import.meta.env.BASE_URL}`
+    const redirectTo = `${window.location.origin}${window.location.pathname}${window.location.search}`
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
     if (error) setError(error.message)
     else setMessage('Password reset email sent.')
@@ -974,6 +985,7 @@ function StrategiesPage({ user, strategies, rulesByStrategy, onChanged }: any) {
                 {strategyRules.slice(0, 4).map((rule: Rule) => <div key={rule.id}><Check size={14} /><span>{rule.rule_text}</span><RuleImportanceBadge importance={rule.importance} /></div>)}
                 {strategyRules.length > 4 && <small>+{strategyRules.length - 4} more rules</small>}
               </div>
+              <StrategyShareControls strategy={strategy} />
               <RuleExamplesPanel strategy={strategy} rules={strategyRules} userId={user.id} />
               <div className="strategy-card-actions"><button className="secondary-button" onClick={() => startEdit(strategy)}>Edit rules</button><button className="text-button" onClick={() => archive(strategy)}>{strategy.status === 'archived' ? 'Restore' : 'Archive'}</button></div>
             </article>

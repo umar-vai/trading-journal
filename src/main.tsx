@@ -6,6 +6,7 @@ import './styles.css'
 import './info-tip-compact.css'
 import './trade-tools-position.css'
 import './screenshot-features.css'
+import './strategy-sharing.css'
 import './rule-importance.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
