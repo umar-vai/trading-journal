@@ -1,0 +1,46 @@
+name: Apply screenshot feature integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-screenshot-features.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Apply integration patch
+        run: node scripts/apply-screenshot-features.mjs
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx
+          if git diff --cached --quiet; then
+            echo "No integration changes needed."
+          else
+            git commit -m "feat: integrate rule and trade screenshot workflows"
+            git push origin main
+          fi
